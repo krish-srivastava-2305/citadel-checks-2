@@ -24,50 +24,69 @@ filteredUsers.forEach(user => {
 });
 console.log("Filtered Similarity Map prepared");
 
+
+function buildGreedyGroup(baseUser, availableUsers, similarityMap, groupSize = 6, minSimilarity = 0.9) {
+    let group = [baseUser];
+    const usedInGroup = new Set([baseUser]);
+
+    for (let i = 1; i < groupSize; i++) {
+        let bestCandidate = null;
+        let maxSimilarity = -Infinity;
+
+        availableUsers.forEach(candidateId => {
+            if (!usedInGroup.has(candidateId)) {
+                const simEntry = similarityMap[baseUser].find(e => e.user === candidateId);
+                
+                if (simEntry && simEntry.similarity > maxSimilarity && simEntry.similarity >= minSimilarity) {
+                    bestCandidate = candidateId;
+                    maxSimilarity = simEntry.similarity;
+                }
+            }
+        });
+
+        if (bestCandidate) {
+            group.push(bestCandidate);
+            usedInGroup.add(bestCandidate);
+        } else {
+            return null;
+        }
+    }
+    const metrics = getPairwiseScore(group, similarityMap);
+    if (metrics && metrics.score >= minSimilarity) {
+        return group;
+    }
+
+    return null;
+}
+
 // ---------- GROUP BUILDER ----------
 function buildGroups(similarityMap, threshold = 0.94) {
-  const allUsers = Object.keys(similarityMap);
-  const groupedUsers = new Set();
-  const finalGroups = [];
+    const allUsers = shuffle(Object.keys(similarityMap));
+    const groupedUsers = new Set();
+    const finalGroups = [];
 
-  while (groupedUsers.size <= allUsers.length - 6) {
-    const ungrouped = shuffle(allUsers.filter(u => !groupedUsers.has(u)));
-    const base = ungrouped[0];
+    const ungrouped = allUsers.filter(u => !groupedUsers.has(u));
 
-    const candidates = similarityMap[base]
-      .filter(entry =>
-        entry.user !== base &&
-        !groupedUsers.has(entry.user) &&
-        entry.similarity >= threshold
-      )
-      .map(entry => entry.user);
+    for (const base of ungrouped) {
+        if (groupedUsers.has(base)) {
+            continue;
+        }
 
-    let bestGroup = null;
-    let bestScore = -Infinity;
+        const newGroup = buildGreedyGroup(base, ungrouped, similarityMap, 6, threshold);
 
-    const combos = getCombinations(candidates, 5);
+        if (newGroup) {
+            const isGroupValid = newGroup.every(user => !groupedUsers.has(user));
 
-    for (const combo of combos) {
-      const group = [base, ...combo];
-
-      if (new Set(group).size < group.length) continue;
-
-      const metrics = getPairwiseScore(group, similarityMap);
-      if (metrics && metrics.score > bestScore) {
-        bestScore = metrics.score;
-        bestGroup = group;
-      }
+            if (isGroupValid) {
+                newGroup.forEach(u => groupedUsers.add(u));
+                finalGroups.push(newGroup);
+                console.log(`Group formed with base user ${base}`);
+            }
+        }
     }
 
-    if (bestGroup) {
-      bestGroup.forEach(u => groupedUsers.add(u));
-      finalGroups.push(bestGroup);
-    } else {
-      groupedUsers.add(base); // Mark base as exhausted
-    }
-  }
-
-  return finalGroups;
+    const remainingUsers = allUsers.filter(u => !groupedUsers.has(u));
+    return { groups: finalGroups, remaining: remainingUsers };
 }
 
 // ---------- UTILITIES ----------
@@ -114,8 +133,36 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
 }
 
-// ---------- RUN ----------
-const groups = buildGroups(filteredMap, 0.94);
-groups.forEach((group, i) => {
-  console.log(`Group ${i + 1}:`, group);
+let allGroups = [];
+
+console.log("\n--- Stage 1: Building High-Confidence Groups ---");
+const { groups: stage1Groups, remaining: remainingAfterStage1 } = buildGroups(filteredMap, 0.94);
+allGroups = allGroups.concat(stage1Groups);
+console.log(`Found ${stage1Groups.length} groups in Stage 1.`);
+console.log(`Remaining users: ${remainingAfterStage1.length}`);
+
+if (remainingAfterStage1.length >= 6) {
+    console.log("\n--- Stage 2: Building Relaxed Groups ---");
+    const relaxedMap = {};
+    remainingAfterStage1.forEach(id => {
+        relaxedMap[id] = filteredMap[id].filter(entry => remainingAfterStage1.includes(entry.user));
+    });
+
+    const { groups: stage2Groups, remaining: remainingAfterStage2 } = buildGroups(relaxedMap, 0.9);
+    allGroups = allGroups.concat(stage2Groups);
+    console.log(`Found ${stage2Groups.length} groups in Stage 2.`);
+    console.log(`Remaining users: ${remainingAfterStage2.length}`);
+
+    if (remainingAfterStage2.length > 0) {
+        console.log("\n--- Stage 3: Handling Leftover Users ---");
+        if (remainingAfterStage2.length >= 3) {
+            allGroups.push(remainingAfterStage2);
+            console.log("Formed group from leftovers.");
+        }
+    }
+}
+
+console.log("\n--- Final Groups ---");
+allGroups.forEach((group, i) => {
+    console.log(`Group ${i + 1} (Size: ${group.length}):`, group);
 });
