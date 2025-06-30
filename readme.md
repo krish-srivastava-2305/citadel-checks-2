@@ -204,6 +204,13 @@ cd citadel-checks
 ```bash
 npm install
 ```
+3. **Set Up Environment Variables**
+   - Create a `.env` file in the root directory
+   - Add your ENVIRONMENT VARIABLES:
+      PINECONE_API_KEY=""
+      PINECONE_INDEX_HOST=""
+      PINECONE_INDEX_NAME=""
+
 3. **Run Algorithm**
 ```bash
 node app/index.js
