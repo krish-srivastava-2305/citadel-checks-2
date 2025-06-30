@@ -1,4 +1,4 @@
-# Citadel - Smart Restaurant Recommendation & Group Formation System
+# Citadel - Group Formation System
 
 ## Introduction
 
